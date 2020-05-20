@@ -1,0 +1,285 @@
+---
+- name: Deploy Docker Swarm Cluster
+  hosts: servers
+  become: yes
+
+  tasks:
+#ping all hosts
+
+  - name: Ping my servers
+    ping:
+
+#Centos Firewall
+
+  - name: Allow port range 2376-2377
+    firewalld:
+      port: 2376-2377/tcp
+      permanent: yes
+      state: enabled
+    when: 'ansible_distribution == "CentOS"'
+
+  - name: Allow port 7946/tcp
+    firewalld:
+      port: 7946/tcp
+      permanent: yes
+      state: enabled
+    when: 'ansible_distribution == "CentOS"'
+
+  - name: Allow port 7946/udp
+    firewalld:
+      port: 7946/udp
+      permanent: yes
+      state: enabled 
+    when: 'ansible_distribution == "CentOS"'
+
+  - name: Allow port 4789/tcp
+    firewalld:
+      port: 4789/tcp
+      permanent: yes
+      state: enabled
+    when: 'ansible_distribution == "CentOS"'
+
+  - name: Allow port 5000/tcp local repo
+    firewalld:
+      port: 5000/tcp
+      permanent: yes
+      state: enabled
+    when: 'ansible_distribution == "CentOS"'
+
+  - name: Allow port 5000/udp local repo
+    firewalld:
+      port: 5000/udp
+      permanent: yes
+      state: enabled
+    when: 'ansible_distribution == "CentOS"'
+
+
+#Ubuntu Firewall
+
+  - name: Allow port range 2376-2377
+    ufw:
+      rule: allow
+      port: 2376:2377
+      proto: tcp
+    when: 'ansible_distribution == "Ubuntu"'
+
+  - name: Allow all access to tcp port 7946
+    ufw:
+      rule: allow
+      port: '7946'
+      proto: tcp
+    when: 'ansible_distribution == "Ubuntu"'
+
+  - name: Allow all access to tcp port 7946
+    ufw:
+      rule: allow
+      port: '7946'
+      proto: udp
+    when: 'ansible_distribution == "Ubuntu"'
+
+  - name: Allow all access to tcp port 4789
+    ufw:
+      rule: allow
+      port: '4789'
+      proto: tcp
+    when: 'ansible_distribution == "Ubuntu"'
+
+  - name: Allow all access to tcp port 5000 docker local repo
+    ufw:
+      rule: allow
+      port: '5000'
+      proto: tcp
+    when: 'ansible_distribution == "Ubuntu"'
+
+  - name: Allow all access to tcp port 5000 docker local repo
+    ufw:
+      rule: allow
+      port: '5000'
+      proto: tcp
+    when: 'ansible_distribution == "Ubuntu"'
+
+
+#Update packages
+
+  - name: update packages on Ubuntu
+    apt:
+      update_cache: yes
+      cache_valid_time: 3600
+      upgrade: dist
+    notify: Reboot Server
+    when: 'ansible_distribution == "Ubuntu"'
+
+  - name: update packages on Centos 
+    yum: name='*' state=latest
+    notify: Reboot Server
+    when: 'ansible_distribution == "CentOS"'
+
+### add repos
+
+  - name: install packages on Centos
+    yum:
+      name: 
+          - epel-release
+          - yum-utils
+      state: present
+    when: 'ansible_distribution == "CentOS"'
+
+  - name: Add Docker Repository
+    shell: yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+    when: 'ansible_distribution == "CentOS"'
+
+
+  - name: Install the packages on Ubuntu
+    apt:
+      name: 
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg-agent
+          - software-properties-common
+      state: latest
+    when: 'ansible_distribution == "Ubuntu"'
+
+  - name: Add Docker Repository
+    shell: curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+    when: 'ansible_distribution == "Ubuntu"'
+
+  - name: Add Docker Repository Key
+    shell: apt-key fingerprint 0EBFCD88
+    when: 'ansible_distribution == "Ubuntu"'
+
+  - name: Add Docker Repository
+    shell: add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+    when: 'ansible_distribution == "Ubuntu"'
+
+#Update packages
+
+  - name: update packages on Ubuntu
+    apt:
+      update_cache: yes
+      cache_valid_time: 3600
+      upgrade: dist
+    notify: Reboot Server
+    when: 'ansible_distribution == "Ubuntu"'
+
+  - name: update packages on Centos 
+    yum: name='*' state=latest
+    notify: Reboot Server
+    when: 'ansible_distribution == "CentOS"'
+
+#install packages
+## Centos
+
+  - name: install the docker packages on Centos
+    yum:
+      name: 
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-python
+          - git
+          - docker-compose
+          - python-pip
+      state: present
+    when: 'ansible_distribution == "CentOS"'
+
+########################
+## Ubuntu
+
+  - name: Install the docker packages on Ubuntu
+    apt:
+      name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - git
+          - docker-compose
+          - python-pip
+      state: latest
+    when: 'ansible_distribution == "Ubuntu"'
+
+
+  - name: Install the jsondiff on Ubuntu
+    pip:
+      name: jsondiff
+      state: latest
+    when: 'ansible_distribution == "Ubuntu"'
+
+
+# Start Docker service
+
+  - name: Start Docker Service
+    service: name=docker state=started enabled=yes
+
+#Swarm cluster
+ 
+  - name: Init a new swarm with default parameters
+    docker_swarm:
+      advertise_addr: '{{ ansible_default_ipv4.address }}'
+      state: present
+    register: result
+    when: 'ansible_hostname == "Ubuntu_Dev"'
+
+  - name: Add nodes to swarm cluster
+    docker_swarm:
+      state: join
+      advertise_addr: '{{ hostvars.master.ansible_default_ipv4.address }}'
+      join_token: '{{ hostvars.master.result.swarm_facts.JoinTokens.Worker }}'
+      remote_addrs: '{{ hostvars.master.ansible_default_ipv4.address }}:2377'
+    when: ' ansible_default_ipv4.address != hostvars.master.ansible_default_ipv4.address '
+
+## clone project from GIT-hub
+
+  - git:
+      repo: 'https://github.com/bratel2/dbc-demo-app.git'
+      dest: /demo
+      clone: yes
+    when: ' ansible_default_ipv4.address == hostvars.master.ansible_default_ipv4.address '
+
+#create local registry
+
+  - name: Create local service
+    docker_swarm_service:
+      name: registry
+      image: registry:2
+      publish: [target_port=5000 published_port=5000]
+      replicas: 1  
+      state: present
+    when: ' ansible_default_ipv4.address == hostvars.master.ansible_default_ipv4.address '
+
+#build images from dockerfiles
+  - name: Run `docker-compose up`
+    docker_compose:
+      project_src: /demo/
+      state: present
+    when: ' ansible_default_ipv4.address == hostvars.master.ansible_default_ipv4.address '
+
+  - name: Run `docker-compose down` 
+    docker_compose:
+      project_src: /demo/
+      state: absent
+    when: ' ansible_default_ipv4.address == hostvars.master.ansible_default_ipv4.address '
+
+## Upload images to local reporitory
+  - name: Push images to local repository
+    shell: cd /demo && docker-compose push
+    when: ' ansible_default_ipv4.address == hostvars.master.ansible_default_ipv4.address '
+
+
+## Deploy stack from a compose file
+  - name: Deploy stack from a compose file
+    docker_stack:
+      state: present
+      name: homework
+      compose:
+        - /demo/docker-compose.yml
+    when: ' ansible_default_ipv4.address == hostvars.master.ansible_default_ipv4.address '
+
+
+
+  handlers:
+  - name: Reboot Server
+    reboot:
+      reboot_timeout: 3600
+
+...

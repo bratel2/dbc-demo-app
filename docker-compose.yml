@@ -32,9 +32,8 @@ services:
                  - backend
            environment:
                    VUE_APP_BACKEND_URL: http://backend:3002/todos
-            deploy:
-               replicas: 3
-               
-               
+           deploy:
+              replicas: 3
+
 networks:
   default:

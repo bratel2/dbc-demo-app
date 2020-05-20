@@ -4,7 +4,9 @@ services:
             image: mongo:4.2.3
             ports:
                - "27017:27017"
-
+            deploy: 
+               replicas: 3
+               
         backend:
             image: 127.0.0.1:5000/backend
             build:
@@ -16,7 +18,9 @@ services:
                - mongo
             environment:
                MONGO_URI: mogodb://mongo:27017/todos
-
+            deploy: 
+               replicas: 3
+               
         frontend:
            image: 127.0.0.1:5000/frontend
            build:
@@ -28,6 +32,9 @@ services:
                  - backend
            environment:
                    VUE_APP_BACKEND_URL: http://backend:3002/todos
-
+            deploy: 
+               replicas: 3
+               
+               
 networks:
   default:
